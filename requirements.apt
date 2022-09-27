@@ -1,0 +1,10 @@
+build-essential
+curl
+ffmpeg
+libjpeg-dev
+libmagic-dev
+libpq-dev
+postgresql-client
+python3-dev
+libldap2-dev
+libsasl2-dev
