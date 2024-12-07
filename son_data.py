@@ -1,6 +1,8 @@
 import os  # For working with files and paths
 import datetime  # For handling dates and times
 import csv  # For reading CSV files
+from pathlib import Path
+from datasets import load_dataset, Dataset, Audio
 
 # Import required Django and Funkwhale functionality
 from funkwhale_api.music.tasks import get_track_from_import_metadata
@@ -147,3 +149,69 @@ def deduplicate_uploads():
                 upload.save()
 
         print(f"Deduplication complete. {shared_tracks.count()} tracks were affected.")
+
+def export_to_huggingface(output_path="/home/soundofnairobi/huggingface_soundofnairobi/"):
+    """
+    Export audio files from Funkwhale database to a Huggingface dataset
+    
+    Args:
+        output_path: Directory path where the dataset will be stored
+    """
+    # Create output directory if it doesn't exist
+    output_dir = Path(output_path)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Get all active uploads
+    uploads = models.Upload.objects.filter(
+        active=True,
+        import_status="finished"
+    ).exclude(
+        audio_file=""
+    )
+
+    audio_files = []
+    metadata = []
+    
+    for upload in uploads:
+        try:
+            # Get the audio file path
+            audio_path = upload.audio_file.path
+            
+            # Create metadata dictionary
+            meta = {
+                'inventory_number': upload.inventory_number,
+                'recording_name': upload.recording_name,
+                'recording_date': upload.recording_date.isoformat() if upload.recording_date else None,
+                'recording_location': upload.recording_start_location,
+                'latitude': upload.location_latitude,
+                'longitude': upload.location_longitude,
+                'recording_device': upload.recording_device,
+                'recording_description': upload.recording_description,
+                'recording_thoughts': upload.recording_thoughts,
+                'recording_special_sounds': upload.recording_special_sounds
+            }
+            
+            # Add paths and metadata if file exists
+            if os.path.exists(audio_path):
+                audio_files.append(audio_path)
+                metadata.append(meta)
+                print(f"Added {upload.inventory_number}: {upload.recording_name}")
+            
+        except Exception as e:
+            print(f"Error processing {upload.inventory_number}: {str(e)}")
+            continue
+
+    # Create Huggingface dataset
+    dataset = Dataset.from_dict({
+        "audio": audio_files,
+        "metadata": metadata
+    })
+    
+    # Cast audio column to Audio() type
+    dataset = dataset.cast_column("audio", Audio())
+    
+    # Save dataset
+    dataset.save_to_disk(output_dir)
+    
+    print(f"Dataset exported with {len(audio_files)} audio files")
+    return dataset
